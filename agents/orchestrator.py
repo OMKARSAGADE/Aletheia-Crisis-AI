@@ -1,14 +1,19 @@
+"""LangGraph Multi-Agent Orchestrator.
+Executes the pipeline across Extraction, Verification, Risk, Action,
+and Summary agents with Langfuse tracing and comprehensive metadata capture.
+"""
 from .graph import graph
 import os
 import time
+from typing import Dict, Any
 from services.langfuse_client import is_available, flush
 
 _last_trace_metadata = {}
 
-def get_last_trace_metadata():
+def get_last_trace_metadata() -> Dict[str, Any]:
     return _last_trace_metadata
 
-def run_pipeline(user_input: str):
+def run_pipeline(user_input: str) -> Dict[str, Any]:
     global _last_trace_metadata
     
     start_time = time.time()
@@ -32,29 +37,40 @@ def run_pipeline(user_input: str):
         except Exception as e:
             print(f"Langfuse callback init error: {e}")
             
-    # Run graph natively (Langfuse will trace every node automatically if config is passed)
+    # Run graph natively
     result = graph.invoke(initial_state, config=config)
     
-    # Process results for the UI
+    # Process structured outputs
     extracted = result.get("extracted_data", {})
     verification = result.get("verification_result", {})
+    risk = result.get("risk_result", {})
+    action = result.get("action_result", {})
+    summary = result.get("summary_result", {})
     
-    result["final_verdict"] = verification.get("verdict", "UNVERIFIED")
-    result["final_credibility"] = verification.get("credibility", 50)
+    verdict = verification.get("verdict", "UNVERIFIED")
+    credibility = verification.get("credibility", 50)
+    composite_risk = risk.get("composite_risk", 50)
+    physical_severity = risk.get("physical_severity", 50)
+    misinfo_risk = risk.get("misinformation_risk", 50)
+    location = extracted.get("location") or "Unknown"
+    
+    result["final_verdict"] = verdict
+    result["final_credibility"] = credibility
     result["trusted_sources"] = verification.get("trusted_sources", [])
     result["evidence_found"] = verification.get("evidence", "No evidence analyzed.")
-    result["final_location"] = extracted.get("location", "Unknown")
+    result["final_location"] = location
+    result["final_risk"] = composite_risk
+    result["physical_severity"] = physical_severity
+    result["misinformation_risk"] = misinfo_risk
+    result["risk_explanation"] = risk.get("explanation", "")
+    result["executive_summary"] = summary.get("executive_summary", "")
+    result["citizen_action"] = action.get("citizen_action", "")
+    result["authority_action"] = action.get("authority_action", "")
+    result["has_simulated_sources"] = verification.get("has_simulated_sources", False)
     
-    if result["final_verdict"] == "Likely Real" or result["final_verdict"] == "REAL":
-        result["final_risk"] = 85
-    elif result["final_verdict"] == "FAKE":
-        result["final_risk"] = 90
-    else:
-        result["final_risk"] = 50
-        
     elapsed = round(time.time() - start_time, 2)
     
-    # Get trace ID from the handler to display in the UI
+    # Extract trace ID if available
     trace_id = "N/A"
     try:
         if config and "callbacks" in config:
@@ -65,16 +81,17 @@ def run_pipeline(user_input: str):
     if is_available():
         flush()
     
-    # Mock status for UI (actual proof is inside Langfuse waterfall diagram now)
     agent_statuses = {a: "completed" for a in ["ExtractionAgent", "VerificationAgent", "RiskAgent", "ActionAgent", "SummaryAgent"]}
     
     _last_trace_metadata = {
         "query": user_input,
         "agents": agent_statuses,
-        "verdict": result.get("final_verdict", "UNVERIFIED"),
-        "credibility": result.get("final_credibility", 50),
-        "risk": result.get("final_risk", 50),
-        "location": result.get("final_location", "Unknown"),
+        "verdict": verdict,
+        "credibility": credibility,
+        "risk": composite_risk,
+        "physical_severity": physical_severity,
+        "misinformation_risk": misinfo_risk,
+        "location": location,
         "response_time": f"{elapsed}s",
         "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
         "trace_id": trace_id

@@ -1,0 +1,21 @@
+# Python cache and bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Environment secrets
+.env
+.venv/
+env/
+venv/
+ENV/
+
+# Database files
+*.db-journal
+
+# IDE and OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

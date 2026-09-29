@@ -1,206 +1,317 @@
-# Aletheia -- Real-Time Crisis Intelligence Platform
+# Aletheia — Crisis Information Verification & Intelligence System
 
-Aletheia is a multi-agent AI framework for real-time crisis claim verification, risk assessment, and geospatial intelligence. Built for authorities and citizens to combat misinformation during emergencies.
+Aletheia is a multi-agent AI system designed to help citizens and emergency authorities verify crisis-related claims, assess risk, detect repeated misinformation, and make faster, better-informed decisions during disasters.
 
----
+The system takes a text claim or crisis-related screenshot, extracts the important details, cross-checks available evidence, separates physical disaster severity from misinformation risk, and presents the results through dedicated citizen and authority dashboards.
 
-## Features
-
-- **Multi-Agent Pipeline** -- 5 specialized AI agents orchestrated via LangGraph
-- **Dual Dashboards** -- Separate interfaces for Citizens (submit and verify) and Authorities (monitor and act)
-- **Live Crisis Feeds** -- Real-time global alerts via GNews API
-- **AI-Powered Verification** -- Gemini LLM analyzes claims for credibility and risk
-- **OCR Support** -- Extract and verify text from screenshots of suspicious messages
-- **Geospatial Mapping** -- Interactive crisis heatmaps with location-based filtering
-- **Analytics Dashboard** -- Risk distribution, verdict breakdown, and hotspot charts
-- **Scenario Simulator** -- Inject test crisis scenarios (Flood, Fire, Collapse) for demos
-- **Agent Observability** -- Full execution tracing via Langfuse integration
-- **Role-Based Auth** -- Secure login routing for Citizens and Authorities
+> **Built as a hackathon project with a focus on crisis intelligence, misinformation detection, explainable risk assessment, and emergency coordination.**
 
 ---
 
-## Architecture
+## What Aletheia Does
 
+Aletheia is built around a simple problem:
+
+**During a crisis, how do you determine what information can be trusted and what action should be taken?**
+
+The system combines several specialized agents and supporting services to answer that question.
+
+### Core capabilities
+
+* **Multi-agent crisis analysis** using LangGraph
+* **Crisis event and location extraction** from text and screenshots
+* **Evidence-based verification** using news sources and corroboration
+* **Cautious verification statuses** instead of treating every report as confirmed fact
+* **Separate physical severity and misinformation risk scores**
+* **Explainable risk calculations**
+* **Duplicate claim detection** and viral misinformation cluster tracking
+* **Citizen dashboard** for checking claims and screenshots
+* **Authority dashboard** for triage, monitoring, and operational guidance
+* **OCR support** using Tesseract with Gemini Vision fallback
+* **Geospatial visualization** using PyDeck
+* **Simulation/demo mode** with explicit `[SIMULATED]` labeling
+* **Langfuse observability** for tracing and execution monitoring
+* **Bcrypt password hashing** and removal of hardcoded API credentials
+
+---
+
+## How the System Works
+
+Aletheia processes a crisis claim through a sequence of specialized components.
+
+```text
+User Claim / Screenshot
+          |
+          v
++-------------------------+
+| Duplicate Claim Checker |
++-----------+-------------+
+            |
+            v
++---------------------------------------------+
+|           LangGraph Agent Pipeline          |
+|                                             |
+|  +----------------+    +------------------+ |
+|  | Extraction     | -> | Verification     | |
+|  | Agent          |    | Agent            | |
+|  +----------------+    +--------+---------+ |
+|                                  |           |
+|                                  v           |
+|                       +------------------+   |
+|                       | Risk Agent       |   |
+|                       | Severity vs      |   |
+|                       | Misinfo Risk     |   |
+|                       +--------+---------+   |
+|                                |             |
+|                                v             |
+|                       +------------------+   |
+|                       | Action Agent     |   |
+|                       | Citizen /        |   |
+|                       | Authority        |   |
+|                       +--------+---------+   |
+|                                |             |
+|                                v             |
+|                       +------------------+   |
+|                       | Summary Agent    |   |
+|                       | Executive Brief  |   |
+|                       +------------------+   |
++---------------------------------------------+
+            |
+            v
+Citizen Dashboard + Authority Dashboard
+            |
+            v
+      SQLite + PyDeck
 ```
-User Input (Text / Image via OCR)
-        |
-        v
-+------------------------------------------+
-|           LangGraph Orchestrator         |
-|                                          |
-|  +------------+    +-----------------+   |
-|  | Extraction |--->|  Verification   |   |
-|  |   Agent    |    |     Agent       |   |
-|  +------------+    +--------+--------+   |
-|                             |            |
-|                             v            |
-|                     +------------+       |
-|                     | Risk Agent |       |
-|                     +------+-----+       |
-|                            |             |
-|                            v             |
-|                     +--------------+     |
-|                     | Action Agent |     |
-|                     +------+-------+     |
-|                            |             |
-|                            v             |
-|                     +---------------+    |
-|                     | Summary Agent |    |
-|                     +---------------+    |
-|                                          |
-|         Langfuse Tracing (all nodes)     |
-+------------------------------------------+
-        |
-        v
-  Dashboard + DB + Maps + Charts
+
+---
+
+## Agent Pipeline
+
+| Agent                  | Responsibility                                                          | Main Output                                                                 |
+| ---------------------- | ----------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| **Extraction Agent**   | Identifies crisis type, location, date, and filters out non-crisis text | `event`, `location`, `date_context`, `is_crisis`                            |
+| **Verification Agent** | Searches available evidence and evaluates corroboration                 | `verdict`, `credibility`, `evidence`, `trusted_sources`                     |
+| **Risk Agent**         | Separates physical danger from misinformation harm                      | `physical_severity`, `misinformation_risk`, `composite_risk`, `explanation` |
+| **Action Agent**       | Produces separate guidance for citizens and authorities                 | `citizen_action`, `authority_action`                                        |
+| **Summary Agent**      | Produces an executive-level crisis briefing                             | `executive_summary`, `summary`                                              |
+
+---
+
+## Verification Statuses
+
+Aletheia intentionally avoids treating a single news report as automatic proof.
+
+Claims are categorized using four cautious statuses:
+
+### `SUPPORTED`
+
+The claim has corroborating evidence from multiple independent and credible sources.
+
+### `CONTRADICTED`
+
+Available evidence, such as official bulletins or reliable fact-checking sources, contradicts the claim.
+
+### `UNVERIFIED`
+
+There is not enough reliable evidence to confirm or reject the claim.
+
+### `CONFLICTING`
+
+Different sources provide contradictory information and further verification is required.
+
+These statuses are designed to communicate uncertainty instead of presenting uncertain information as established fact.
+
+---
+
+## Explainable Risk Assessment
+
+One of the main design decisions in Aletheia is to **separate physical disaster severity from misinformation risk**.
+
+A serious earthquake and a false rumor about an earthquake are different problems and should not automatically receive the same risk interpretation.
+
+Aletheia therefore calculates:
+
+* **Physical Severity** — potential danger to people, infrastructure, and the surrounding area.
+* **Misinformation Risk** — potential for a claim to cause panic, unnecessary evacuation, unsafe behavior, or other harmful reactions.
+* **Operational Priority** — a combined triage signal used to help prioritize incidents.
+
+The system also provides an explanation of the factors contributing to the calculated scores.
+
+---
+
+## Duplicate & Viral Claim Detection
+
+Aletheia checks new claims against previously processed reports.
+
+The duplicate detection system combines:
+
+* TF-IDF cosine similarity
+* Token Jaccard similarity
+* Matching historical reports
+* Cluster frequency
+
+This helps identify when the same or highly similar rumor is being repeatedly submitted across different users or geographic areas.
+
+---
+
+## Citizen Portal
+
+The Citizen Portal allows users to submit crisis information for verification.
+
+Users can:
+
+* Submit a text claim
+* Upload a crisis-related screenshot
+* View extracted event and location information
+* See verification status
+* Review evidence
+* View credibility information
+* See physical severity and misinformation risk separately
+* Receive citizen safety guidance
+* Get notified when a similar claim has already been investigated
+* Check whether results contain simulated/demo data
+
+### Demo Login
+
+For trying the application locally, the demo Citizen Portal credentials are:
+
+```text
+Username: user
+Password: user123
 ```
 
-### Agents
+> **Demo credentials only:** These credentials are intended for the included demo environment and must be changed or replaced before deploying the application in a real production environment.
 
-| Agent | Role |
-|---|---|
-| **Extraction Agent** | Parses claims, extracts location, entities, and crisis type |
-| **Verification Agent** | Cross-references with GNews and Gemini for credibility scoring |
-| **Risk Agent** | Assigns risk score based on severity, location, and patterns |
-| **Action Agent** | Recommends response actions for authorities |
-| **Summary Agent** | Generates a final structured intelligence report |
+---
+
+## Authority Command Center
+
+The Authority Command Center provides a broader view of incoming crisis reports.
+
+It includes:
+
+* Crisis triage
+* Risk metrics
+* Verification status breakdowns
+* Geospatial visualization
+* Priority categorization
+* Evidence and source information
+* Simulation/demo indicators
+* Operational recommendations
+* Langfuse execution and trace information
+
+### Demo Login
+
+For trying the application locally:
+
+```text
+Username: admin
+Password: admin123
+```
+
+> **Demo credentials only:** These credentials are included for local demonstration purposes and are not suitable for a production deployment.
+
+---
+
+## OCR & Screenshot Verification
+
+Aletheia can extract text from crisis screenshots.
+
+The OCR pipeline supports:
+
+1. OpenCV image preprocessing
+2. Local Tesseract OCR
+3. Automatic Gemini Vision fallback when Tesseract is unavailable
+
+This makes screenshot-based verification usable even when a local Tesseract installation is not available, provided a Gemini API key is configured.
+
+For offline/local OCR, Tesseract can be installed separately.
+
+---
+
+## Simulation & Demo Mode
+
+External APIs may not always be available during development or demonstrations.
+
+Aletheia therefore includes a fallback system for demo scenarios.
+
+Synthetic results are explicitly marked with:
+
+```text
+[SIMULATED]
+```
+
+and include simulation metadata so that demo information is not silently presented as live evidence.
+
+This is particularly useful when the GNews API quota is unavailable or when the project is being demonstrated without external API credentials.
+
+---
+
+## Observability
+
+Aletheia integrates Langfuse for agent observability.
+
+The system can track:
+
+* Agent execution
+* Node status
+* Execution latency
+* Trace IDs
+* Pipeline behavior
+
+This makes it easier to understand how a crisis claim moved through the multi-agent pipeline.
 
 ---
 
 ## Tech Stack
 
-| Layer | Technology |
-|---|---|
-| Frontend | Streamlit |
-| Agent Framework | LangGraph + LangChain |
-| LLM | Google Gemini API |
-| News Intelligence | GNews API |
-| OCR | Tesseract (pytesseract) |
-| Database | SQLite |
-| Maps | PyDeck |
-| Charts | Plotly |
-| Geocoding | GeoPy |
-| Observability | Langfuse |
-| Auth | Session-based (bcrypt) |
+### Frontend
 
----
+* Streamlit
+* Custom CSS
+* Plotly
+* PyDeck
 
-## Project Structure
+### AI & Agent Orchestration
 
-```
-crisislens/
-|-- app.py                    # Main entry point
-|-- requirements.txt          # Python dependencies
-|-- .env.example              # Environment variable template
-|-- .gitignore
-|
-|-- agents/                   # LangGraph multi-agent pipeline
-|   |-- graph.py              # LangGraph DAG definition
-|   |-- orchestrator.py       # Pipeline runner + Langfuse tracing
-|   |-- state.py              # Shared agent state schema
-|   |-- extraction_agent.py   # Claim parsing and entity extraction
-|   |-- verification_agent.py # Cross-reference and credibility scoring
-|   |-- risk_agent.py         # Risk assessment
-|   |-- action_agent.py       # Response recommendations
-|   |-- summary_agent.py      # Final report generation
-|
-|-- services/                 # Backend services
-|   |-- db.py                 # SQLite database operations
-|   |-- auth.py               # Login, logout, role management
-|   |-- gemini.py             # Gemini LLM integration
-|   |-- gnews.py              # GNews API live alerts
-|   |-- ocr.py                # Tesseract OCR text extraction
-|   |-- geo.py                # Geocoding (lat/lng lookup)
-|   |-- langfuse_client.py    # Langfuse trace fetching
-|   |-- config.py             # App configuration
-|
-|-- components/               # Streamlit UI components
-|   |-- theme.py              # Global CSS theme
-|   |-- layout.py             # Page wrapper
-|   |-- cards.py              # Metric cards, verdict badges
-|   |-- charts.py             # Plotly analytics charts
-|   |-- map.py                # PyDeck crisis map
-|   |-- alerts.py             # Live alert cards
-|   |-- navbar.py             # Navigation bar
-|
-|-- pages/                    # Streamlit multi-page routing
-    |-- user_login.py          # Citizen login
-    |-- user_dashboard.py      # Citizen verification portal
-    |-- authority_login.py     # Authority login
-    |-- authority_dashboard.py # Authority command center
-```
+* LangGraph
+* LangChain
+* Google Gemini API
 
----
+### News Intelligence
 
-## Setup
+* GNews API v4
+* Simulated benchmark fallback
 
-### 1. Clone the Repository
+### OCR & Computer Vision
 
-```bash
-git clone https://github.com/YOUR-USERNAME/YOUR-REPO.git
-cd YOUR-REPO
-```
+* OpenCV
+* Pillow
+* PyTesseract
+* Gemini Multimodal Vision
 
-### 2. Create a Virtual Environment
+### Data & Similarity
 
-```bash
-python -m venv venv
-venv\Scripts\activate        # Windows
-# source venv/bin/activate   # macOS/Linux
-```
+* SQLite
+* sqlite-utils
+* scikit-learn
+* NumPy
+* Pandas
 
-### 3. Install Dependencies
+### Geospatial
 
-```bash
-pip install -r requirements.txt
-```
+* PyDeck
+* GeoPy
+* Nominatim
 
-### 4. Configure Environment Variables
+### Security
 
-```bash
-cp .env.example .env
-```
+* bcrypt
+* Environment-based secrets
 
-Open `.env` and fill in your actual API keys:
+### Observability
 
-```
-GEMINI_API_KEY=your_key_here
-GNEWS_API_KEY=your_key_here
-LANGFUSE_PUBLIC_KEY=your_key_here
-LANGFUSE_SECRET_KEY=your_key_here
-LANGFUSE_HOST=https://cloud.langfuse.com
-```
+* Langfuse
 
-### 5. Run the Application
 
-```bash
-streamlit run app.py
-```
-
----
-
-## Default Login Credentials
-
-| Role | Username | Password |
-|---|---|---|
-| Citizen | user | user123 |
-| Authority | admin | admin123 |
-
----
-
-## Observability (Langfuse)
-
-All 5 agents are automatically traced via native Langfuse callbacks during every pipeline execution. Traces appear as a structured waterfall in the Langfuse dashboard showing:
-
-- Per-agent execution time
-- Input/output at each node
-- Final verdict, credibility, and risk scores
-- Full trace ID linking
-
-The Authority Dashboard includes a built-in AI Trace panel that surfaces the latest trace data directly in the UI.
-
----
-
-## License
-
-This project was built for educational and hackathon purposes.
