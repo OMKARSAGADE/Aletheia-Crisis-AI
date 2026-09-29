@@ -1,12 +1,29 @@
+"""GNews API Service for Crisis Monitoring.
+Fetches real-time news articles or returns explicitly labeled simulated data
+when API keys are unconfigured, rate-limited, or in DEMO mode.
+"""
 import os
 import requests
 from datetime import datetime
-from services.db import save_alerts
+from typing import List, Dict, Any, Optional
+from dotenv import load_dotenv
 
-GNEWS_API_KEY = os.getenv("GNEWS_API_KEY")
+load_dotenv()
 
-def fetch_live_alerts(limit=10):
-    if not GNEWS_API_KEY or GNEWS_API_KEY == "your_gnews_api_key_here":
+def get_gnews_api_key() -> str:
+    key = os.getenv("GNEWS_API_KEY", "").strip()
+    if key in ["your_gnews_api_key_here", "disabled", "none", ""]:
+        return ""
+    return key
+
+def is_demo_mode() -> bool:
+    return os.getenv("DEMO_MODE", "false").lower() in ["true", "1", "yes"]
+
+def fetch_live_alerts(limit: int = 10) -> List[Dict[str, Any]]:
+    """Fetch live alerts from GNews or return labeled simulated alerts."""
+    api_key = get_gnews_api_key()
+    
+    if not api_key or is_demo_mode():
         return get_fallback_alerts(limit)
         
     url = "https://gnews.io/api/v4/search"
@@ -14,85 +31,104 @@ def fetch_live_alerts(limit=10):
     params = {
         "q": query,
         "lang": "en",
-        "country": "in", # Focusing on India for this demo
+        "country": "in",
         "max": limit,
-        "apikey": GNEWS_API_KEY
+        "apikey": api_key
     }
     
     try:
-        response = requests.get(url, params=params, timeout=10)
-        response.raise_for_status()
-        data = response.json()
-        
-        articles = data.get("articles", [])
-        results = []
-        for article in articles:
-            results.append({
-                "title": article.get("title", ""),
-                "description": article.get("description", ""),
-                "source": article.get("source", {}).get("name", "Unknown Source"),
-                "publishedAt": article.get("publishedAt", datetime.now().isoformat()),
-                "url": article.get("url", ""),
-                "location": "Unknown" # GNews doesn't typically provide exact geo-coords
-            })
-            
-        if results:
-            # Save to DB dynamically
-            save_alerts(results)
-            
-        return results if results else get_fallback_alerts(limit)
-        
+        response = requests.get(url, params=params, timeout=8)
+        if response.status_code == 200:
+            data = response.json()
+            articles = data.get("articles", [])
+            results = []
+            for article in articles:
+                results.append({
+                    "title": article.get("title", ""),
+                    "description": article.get("description", ""),
+                    "source": article.get("source", {}).get("name", "News Outlet"),
+                    "publishedAt": article.get("publishedAt", datetime.now().isoformat()),
+                    "url": article.get("url", "#"),
+                    "location": "India",
+                    "is_simulated": False
+                })
+            if results:
+                try:
+                    from services.db import save_alerts
+                    save_alerts(results)
+                except Exception:
+                    pass
+                return results
     except Exception as e:
-        print(f"GNews API Error: {e}")
-        return get_fallback_alerts(limit)
+        print(f"GNews API Live Fetch Warning: {e}")
+        
+    return get_fallback_alerts(limit)
 
-def get_fallback_alerts(limit):
-    # Mock data fallback
+def get_fallback_alerts(limit: int = 5) -> List[Dict[str, Any]]:
+    """Return synthetic alerts explicitly marked as [SIMULATED]."""
+    now_iso = datetime.now().isoformat()
     return [
         {
-            "title": "[MOCK] Heavy rains trigger flood warnings in coastal districts",
-            "description": "Authorities advise caution as water levels rise rapidly.",
-            "source": "Local News Mock",
-            "publishedAt": datetime.now().isoformat(),
+            "title": "[SIMULATED] Heavy monsoon rainfall prompts alert in coastal river basins",
+            "description": "State disaster management authority monitors water discharge levels.",
+            "source": "Simulated Wire (Demo)",
+            "publishedAt": now_iso,
             "url": "#",
-            "location": "Unknown"
+            "location": "Coastal Region",
+            "is_simulated": True
         },
         {
-            "title": "[MOCK] Industrial fire controlled after 4 hours",
-            "description": "No casualties reported in the warehouse blaze.",
-            "source": "City Reports",
-            "publishedAt": datetime.now().isoformat(),
+            "title": "[SIMULATED] Fire department brings commercial warehouse blaze under control",
+            "description": "Six fire tenders dispatched to site; no civilian casualties reported.",
+            "source": "Simulated Wire (Demo)",
+            "publishedAt": now_iso,
             "url": "#",
-            "location": "Unknown"
+            "location": "Pune",
+            "is_simulated": True
+        },
+        {
+            "title": "[SIMULATED] Precautionary structural safety review for older flyovers",
+            "description": "Municipal engineering wing conducts load-bearing assessment.",
+            "source": "Simulated Wire (Demo)",
+            "publishedAt": now_iso,
+            "url": "#",
+            "location": "Mumbai",
+            "is_simulated": True
         }
     ][:limit]
 
-def search_specific_incident(event, location, date_context="Recent"):
-    if not GNEWS_API_KEY or GNEWS_API_KEY == "your_gnews_api_key_here":
-        # Simulate API payload for demo if key missing
+def search_specific_incident(event: Optional[str], location: Optional[str], date_context: str = "Recent") -> List[Dict[str, Any]]:
+    """Search for news articles matching an extracted crisis incident and location."""
+    if not event and not location:
+        return []
+
+    api_key = get_gnews_api_key()
+    if not api_key or is_demo_mode():
         return simulate_gnews_results(event, location)
         
     url = "https://gnews.io/api/v4/search"
-    
-    # Unshackled query: Let the search engine find relevance naturally without strict quotes
-    query = f"{event} {location}"
-    if date_context.lower() != "recent":
-        query += f" {date_context}"
+    query_parts = []
+    if event:
+        query_parts.append(event)
+    if location and location.lower() != "unknown":
+        query_parts.append(location)
+    if date_context and date_context.lower() not in ["recent", "none", ""]:
+        query_parts.append(date_context)
         
+    query = " ".join(query_parts)
     params = {
         "q": query,
         "lang": "en",
         "country": "in",
         "max": 10,
         "sortby": "publishedAt",
-        "apikey": GNEWS_API_KEY
+        "apikey": api_key
     }
     
     try:
-        response = requests.get(url, params=params, timeout=10)
-        
-        # If rate limited (429) or forbidden (403), gracefully simulate so demo doesn't crash
+        response = requests.get(url, params=params, timeout=8)
         if response.status_code in [403, 429]:
+            print("GNews API quota reached or key invalid. Falling back to clearly labeled simulation.")
             return simulate_gnews_results(event, location)
             
         if response.status_code == 200:
@@ -102,30 +138,42 @@ def search_specific_incident(event, location, date_context="Recent"):
             for article in articles:
                 results.append({
                     "title": article.get("title", ""),
-                    "source": article.get("source", {}).get("name", "Unknown Source"),
-                    "url": article.get("url", ""),
-                    "publishedAt": article.get("publishedAt", "")
+                    "source": article.get("source", {}).get("name", "News Outlet"),
+                    "url": article.get("url", "#"),
+                    "publishedAt": article.get("publishedAt", ""),
+                    "is_simulated": False
                 })
             return results
     except Exception as e:
         print(f"GNews API Search Error: {e}")
-    return []
+        
+    return simulate_gnews_results(event, location)
 
-def simulate_gnews_results(event, location):
-    # If the user asks about a common demo scenario, simulate a hit
-    if event.lower() in ["fire", "earthquake", "flood", "collapse"] and location.lower() not in ["unknown", ""]:
+def simulate_gnews_results(event: Optional[str], location: Optional[str]) -> List[Dict[str, Any]]:
+    """Generate clearly marked simulated news findings for demo scenarios."""
+    if not event or not location or location.lower() in ["unknown", "none", ""]:
+        return []
+        
+    evt_title = event.title()
+    loc_title = location.title()
+    now_iso = datetime.now().isoformat()
+    
+    # Common test benchmark events (e.g. Hingoli earthquake, Pune fire)
+    if evt_title.lower() in ["earthquake", "fire", "flood", "cyclone", "collapse"]:
         return [
             {
-                "title": f"Breaking: {event.title()} reported in {location.title()}",
-                "source": "Simulated News Network",
+                "title": f"[SIMULATED EVIDENCE] Regional agencies respond to {evt_title} reports in {loc_title}",
+                "source": "Simulated Press Wire (Demo)",
                 "url": "#",
-                "publishedAt": datetime.now().isoformat()
+                "publishedAt": now_iso,
+                "is_simulated": True
             },
             {
-                "title": f"Emergency services respond to {location.title()} {event.lower()}",
-                "source": "Local Updates",
+                "title": f"[SIMULATED EVIDENCE] Disaster control room issues preliminary bulletin for {loc_title} {evt_title.lower()}",
+                "source": "Municipal Bulletin (Demo)",
                 "url": "#",
-                "publishedAt": datetime.now().isoformat()
+                "publishedAt": now_iso,
+                "is_simulated": True
             }
         ]
     return []

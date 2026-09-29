@@ -1,0 +1,205 @@
+================================================================================
+ALETHEIA CRISIS AI: PROJECT AUDIT AND CHANGE DOCUMENTATION
+================================================================================
+Audit Date & Time: 2026-09-29 13:20:00 IST
+Project Corpus: AtharvaUbhe46/Aletheia-Crisis-AI
+Working Directory: c:\Users\atharva_ubhe\Desktop\Aletheia-Crisis-AI
+Auditor: Antigravity AI Agent
+
+================================================================================
+1. ISSUES DISCOVERED
+================================================================================
+[Security & Credential Management]
+- A hardcoded live GNews API key ('71e3406559b0c50de45c7da3856f0b9e') was exposed directly in `test_pipeline.py`.
+- Authentication in `services/auth.py` and `services/db.py` stored and checked passwords as plaintext, despite `bcrypt` being listed in `requirements.txt`.
+- `.env.example` was minimal and lacked documentation for Langfuse keys and demo flags.
+
+[Risk Scoring & Credibility Coupling]
+- In `agents/risk_agent.py`, risk was hardcoded to arbitrary values (85, 90, 50) based on string matching.
+- In `agents/orchestrator.py`, the risk score was overridden with hardcoded numbers, ignoring the agent.
+- Physical disaster severity (e.g., Earthquake vs minor flood) was completely conflated with misinformation falsehood risk.
+- Risk scores lacked mathematical explainability and diagnostic factor breakdowns.
+
+[Verification & Journalistic Evidence Standards]
+- In `agents/verification_agent.py`, credibility scores were generated using `random.randint(...)`, producing non-deterministic and unscientific ratings.
+- Verification verdicts lacked cautious journalistic statuses (Supported, Contradicted, Unverified, Conflicting).
+- News reports were treated as automatic proof rather than evidence under active investigation.
+
+[Simulation Transparency]
+- Mock and fallback data in `services/gnews.py` and `services/db.py` were not clearly distinguished from real incidents.
+- No clear UI indicator existed to inform authorities or citizens when external news APIs were in demo/fallback mode.
+
+[Entity Extraction & Fallback Parsing]
+- In `agents/extraction_agent.py`, non-crisis text like "Random nonsense text with no crisis" falsely extracted the word "Random" as a geographic location and marked the event as "Incident".
+- Fallback regex parsing had poor handling for prepositional location phrases ("in <City>", "near <City>").
+
+[Duplicate Detection]
+- Although referenced in the user specifications, duplicate detection was completely absent from the codebase.
+- No mechanism existed to identify viral misinformation claims being submitted repeatedly across communities.
+
+[Incomplete Agents]
+- `agents/summary_agent.py` was a stub returning a placeholder string ("Placeholder summary.").
+- `agents/action_agent.py` was hardcoded to three generic one-line strings and failed to separate citizen safety guidance from civil authority operational directives.
+
+[UI & Theme Deficiencies]
+- In `components/charts.py`, Plotly charts set `font_color='#fff'`, making chart text nearly invisible against the light theme background.
+- Charts and badge components lacked support for cautious verification statuses.
+
+[OCR Engine Availability]
+- On Windows systems without Tesseract installed, `services/ocr.py` silently failed without diagnostics.
+- No fallback existed to transcribe text using multimodal vision LLMs.
+
+[Platform Compatibility]
+- Test runners and logging contained Unicode symbols (e.g. \u2713, \u2705) that crashed under Windows default `cp1252` console encoding with `UnicodeEncodeError`.
+
+================================================================================
+2. FILES ACTUALLY MODIFIED OR CREATED
+================================================================================
+
+1. [CREATED] services/duplicates.py
+   - Purpose: Implemented duplicate claim detection and viral cluster tracking.
+   - Specific Changes: Created `check_duplicate_claim` using unigram TF-IDF cosine similarity and token Jaccard similarity to calculate similarity percentage, find matching prior reports, and count cluster frequency.
+
+2. [MODIFIED] agents/extraction_agent.py
+   - Purpose: Robust crisis classification and entity extraction.
+   - Specific Changes: Built crisis category taxonomy; added preposition-based location extraction; added date context parser; added non-crisis detection that returns `None` for event and location when text does not describe an emergency.
+
+3. [MODIFIED] agents/verification_agent.py
+   - Purpose: Objective evidence evaluation and cautious status taxonomy.
+   - Specific Changes: Removed `random.randint`; implemented deterministic credibility scoring based on source volume and corroboration; mapped claims to cautious statuses (`SUPPORTED`, `CONTRADICTED`, `UNVERIFIED`, `CONFLICTING`); tagged simulated sources.
+
+4. [MODIFIED] agents/risk_agent.py
+   - Purpose: Separation of physical disaster severity from misinformation harm potential.
+   - Specific Changes: Implemented separate `physical_severity` (0-100, based on hazard type and urgency keywords) and `misinformation_risk` (0-100, based on status, credibility deficit, and panic triggers); computed composite operational triage score; generated explainable rationale strings.
+
+5. [MODIFIED] agents/action_agent.py
+   - Purpose: Realistic, distinct actionable recommendations.
+   - Specific Changes: Generates separate operational protocols for emergency responders (`authority_action`) and safety advice for the public (`citizen_action`).
+
+6. [MODIFIED] agents/summary_agent.py
+   - Purpose: Executive crisis intelligence briefings.
+   - Specific Changes: Replaced placeholder stub with structured briefing synthesis integrating entities, decoupled risk scores, evidence findings, and LLM/deterministic fallback.
+
+7. [MODIFIED] agents/orchestrator.py
+   - Purpose: Data preservation and pipeline coordination.
+   - Specific Changes: Preserved decoupled metrics (`physical_severity`, `misinformation_risk`, `composite_risk`, `risk_explanation`, `citizen_action`, `authority_action`, `has_simulated_sources`) in the final output dictionary and trace metadata.
+
+8. [MODIFIED] services/gemini.py
+   - Purpose: Resilient LLM integration.
+   - Specific Changes: Added lazy initialization `get_model()` with dynamic API key inspection; updated analysis prompts with cautious status standards; implemented deterministic structured fallbacks.
+
+9. [MODIFIED] services/gnews.py
+   - Purpose: Resilient news search and simulation transparency.
+   - Specific Changes: Dynamically reads `GNEWS_API_KEY`; added HTTP request timeout (8s); clearly labeled all synthetic results with `[SIMULATED]` prefixes, simulated source names, and `is_simulated=True` flags.
+
+10. [MODIFIED] services/ocr.py
+    - Purpose: Resilient OCR text extraction on Windows.
+    - Specific Changes: Added autodetection of `tesseract.exe` across standard Windows program directories; added `is_ocr_available()` diagnostic function; implemented automatic multimodal **Gemini Vision** fallback for image text extraction when local Tesseract binary is uninstalled.
+
+11. [MODIFIED] services/auth.py
+    - Purpose: Hardened credential security.
+    - Specific Changes: Integrated `bcrypt` password hashing (`hash_password`, `verify_password`); implemented automatic migration that upgrades legacy plaintext passwords to bcrypt hashes upon successful login.
+
+12. [MODIFIED] services/db.py
+    - Purpose: Schema migrations, security, and simulation labeling.
+    - Specific Changes: Added safe column migrations for `physical_severity`, `misinformation_risk`, and `is_simulated`; updated demo and scenario reports with explicit `[SIMULATED]` tags; stored bcrypt-hashed passwords on initial seeding.
+
+13. [MODIFIED] components/cards.py
+    - Purpose: Status badge visual hierarchy and metric display.
+    - Specific Changes: Added styling and color tokens for `SUPPORTED`, `CONTRADICTED`, `UNVERIFIED`, `CONFLICTING`; added subtitle support to `metric_card`.
+
+14. [MODIFIED] components/charts.py
+    - Purpose: Dashboard readability and status breakdown.
+    - Specific Changes: Fixed chart font color from invisible `#fff` to `#31333f` for light theme compatibility; updated verdict breakdown chart to group claims by cautious status taxonomy.
+
+15. [MODIFIED] pages/user_dashboard.py
+    - Purpose: Citizen verification UX and duplicate alerts.
+    - Specific Changes: Added duplicate claim detection alert; displayed separate 4-metric score cards (Credibility, Physical Severity, Misinfo Risk, Operational Priority); surfaced explainable risk breakdown, citizen action guidance, and OCR status diagnostics.
+
+16. [MODIFIED] pages/authority_dashboard.py
+    - Purpose: Authority command center and simulation transparency.
+    - Specific Changes: Added warning banner when running in demo/simulated mode; updated tables to display cautious statuses and separate risk dimensions; added triage reason categorization; displayed simulation tags on feeds.
+
+17. [MODIFIED] .env.example
+    - Purpose: Accurate configuration template.
+    - Specific Changes: Documented `GEMINI_API_KEY`, `GNEWS_API_KEY`, `DEMO_MODE`, `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, `LANGFUSE_HOST`, and optional `TESSERACT_CMD`.
+
+18. [MODIFIED] test_pipeline.py
+    - Purpose: End-to-end verification and test suite hardening.
+    - Specific Changes: Removed exposed hardcoded API key; added validation for decoupled risk metrics, cautious statuses, and explanations; fixed console output encoding for Windows compatibility.
+
+19. [CREATED] test_suite.py
+    - Purpose: Focused unit test coverage.
+    - Specific Changes: Created unit tests covering text normalization, duplicate claim detection, risk score decoupling, non-crisis extraction, crisis entity extraction, and bcrypt auth verification.
+
+20. [MODIFIED] README.md
+    - Purpose: Comprehensive system documentation.
+    - Specific Changes: Updated architecture diagram, agent descriptions, cautious status definitions, decoupled risk model, setup guide, and test commands.
+
+21. [CREATED] .gitignore
+    - Purpose: Repository cleanliness and secret protection.
+    - Specific Changes: Added ignore patterns for `.env`, `__pycache__`, virtual environments, and temporary DB journal files.
+
+================================================================================
+3. TESTS AND VALIDATION CHECKS PERFORMED & ACTUAL RESULTS
+================================================================================
+
+[Check 1: Dependency Installation]
+Command: `python -m pip install -r requirements.txt`
+Result: SUCCESS (Exit Code 0). All required packages installed into Python 3.14 environment (langgraph, langchain, streamlit, pydeck, plotly, opencv-python, scikit-learn, bcrypt, langfuse, google-generativeai, geopy, sqlite-utils, etc.).
+
+[Check 2: Component Unit Test Suite]
+Command: `python test_suite.py`
+Result: SUCCESS (Exit Code 0).
+- Text normalization: PASSED
+- Duplicate claim detection: PASSED
+- Decoupled physical severity vs misinfo risk: PASSED
+- Non-crisis extraction: PASSED
+- Crisis entity extraction: PASSED
+- Bcrypt authentication & hashing: PASSED
+
+[Check 3: Pytest Regression Suite]
+Command: `python -m pytest test_suite.py`
+Result: SUCCESS (Exit Code 0). 6 passed in 9.29s.
+
+[Check 4: End-to-End Multi-Agent Pipeline Validation]
+Command: `python test_pipeline.py`
+Result: SUCCESS (Exit Code 0). 5 passed, 0 failed out of 5 tests.
+- Test 1 (Earthquake in Hingoli): Extracted Event: Earthquake, Location: Hingoli, Status: SUPPORTED, Credibility: 72%, Physical: 80/100, Misinfo: 15/100, Priority: 63/100 -> PASSED
+- Test 2 (Flood in Assam April 2026): Extracted Event: Flood, Location: Assam, Date: April 2026, Status: SUPPORTED -> PASSED
+- Test 3 (Fire in Mumbai building collapse): Extracted Event: Fire, Location: Mumbai, Status: SUPPORTED -> PASSED
+- Test 4 (Cyclone warning in Chennai): Extracted Event: Cyclone, Location: Chennai, Status: SUPPORTED -> PASSED
+- Test 5 (Random nonsense text with no crisis): Extracted Event: None, Location: Unknown, Status: UNVERIFIED, Risk: 10/100 -> PASSED
+
+================================================================================
+4. ISSUES THAT REMAIN UNRESOLVED & SYSTEM LIMITATIONS
+================================================================================
+- Local Tesseract OCR binary is not pre-installed on this Windows machine. While the system automatically falls back to Gemini Multimodal Vision when a GEMINI_API_KEY is configured, offline OCR on images without an API key remains limited.
+- GNews free-tier API has a 100 request/day quota. When depleted, the system transparently utilizes the implemented simulated fallback scenarios.
+
+================================================================================
+5. FEATURES THAT REMAIN INCOMPLETE
+================================================================================
+- Automated geofence boundary shapefile rendering (currently uses PyDeck point markers and radius heatmaps, which is optimal for a hackathon MVP).
+- Multi-language translation for local regional Indian languages (Hindi, Marathi, Assamese) is currently handled via English input/translation.
+
+================================================================================
+6. CHECKS BLOCKED BY MISSING CREDENTIALS OR EXTERNAL SERVICES
+================================================================================
+- Live Gemini API token calls require user's `GEMINI_API_KEY` in `.env` (system tested with deterministic fallbacks and simulated responses).
+- Live Langfuse cloud waterfall UI visualization requires `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY` in `.env` (in-memory tracing tested and functional).
+- Live GNews quota depends on user's `GNEWS_API_KEY` in `.env` (simulated demo mode tested and functional).
+
+================================================================================
+7. MANUAL INSTALLATION OR CONFIGURATION STILL REQUIRED
+================================================================================
+1. To enable live LLM generation and multimodal vision OCR:
+   - Create a `.env` file from `.env.example`.
+   - Add your Gemini API key from https://aistudio.google.com/
+2. To enable live news searching:
+   - Add your GNews API key from https://gnews.io/ to `.env`.
+3. (Optional) For offline local OCR:
+   - Install Tesseract-OCR Windows binary and ensure it is in PATH or specify `TESSERACT_CMD` in `.env`.
+4. Launch the application:
+   - Run `streamlit run app.py` in the project root directory.
+================================================================================
